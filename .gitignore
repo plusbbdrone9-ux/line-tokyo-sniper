@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Secrets and environment variables
+.env
+data/tokyo_session.json
+
+# Local Databases and logs
+*.log
+@AutomationLog.txt
+data/*.db-journal
+
+# Screenshots and temp images
+*.png
+*.jpg
+scratch/

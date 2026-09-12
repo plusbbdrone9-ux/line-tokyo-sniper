@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LINE Auto-CF Sniper Bot - ระบบไลน์ส่วนตัว CF ของอัตโนมัติ</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    body { font-family: 'Prompt', 'Inter', sans-serif; }
+    .badge-sniper-on { background: rgba(6, 199, 85, 0.15); color: #4ade80; border: 1px solid rgba(6, 199, 85, 0.3); }
+    .badge-sniper-off { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+    .badge-matched { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); font-weight: bold; }
+    .cf-win-tag { background: #06c755; color: #000; font-weight: 800; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="header-container">
+      <div class="brand">
+        <span class="brand-badge" style="background:#f59e0b; color:#000;">SNIPER CF</span>
+        <h1 class="brand-title">LINE Personal Auto-CF Bot</h1>
+      </div>
+      <div class="header-status">
+        <div class="status-pill">
+          <span class="indicator" id="sniper-indicator"></span>
+          <span id="sniper-status-text">โหมดสไนเปอร์พร้อมทำงาน</span>
+        </div>
+        <button id="sniper-toggle-btn" class="btn" onclick="toggleSniperMaster()">
+          <span id="sniper-toggle-label">⚡ สไนเปอร์เปิดทำงาน (คลิกเพื่อหยุดฉุกเฉิน)</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="app-container">
+
+    <!-- Top Metrics Overview -->
+    <section class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">สถานะระบบ Sniper</div>
+        <div class="stat-value" id="stat-sniper-state" style="color:var(--line-green);">🟢 พร้อมยิง CF ทันที</div>
+        <div class="stat-subtext" id="stat-platform-mode">แพลตฟอร์ม: LINE PC (Windows)</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">กฎการ CF ที่เปิดทำงาน (Active Rules)</div>
+        <div class="stat-value" id="stat-active-rules">2 กฎ</div>
+        <div class="stat-subtext">เฝ้าดูคีย์เวิร์ดในกลุ่ม / OpenChat</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">จำนวนสินค้าที่พิมพ์ CF สำเร็จ</div>
+        <div class="stat-value" id="stat-total-wins" style="color:#f59e0b;">0 รายการ</div>
+        <div class="stat-subtext">ประวัติการสไนเปอร์ล่าสุด</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">ความเร็วเฉลี่ย (Response Latency)</div>
+        <div class="stat-value" id="stat-avg-speed">~200 ms</div>
+        <div class="stat-subtext">Sub-second Auto Typing</div>
+      </div>
+    </section>
+
+    <!-- Navigation Tabs -->
+    <nav class="tabs-nav">
+      <button class="tab-btn active" onclick="switchTab('tab-radar')">🎯 เรดาร์เฝ้าดู & ทดสอบยิง CF</button>
+      <button class="tab-btn" onclick="switchTab('tab-rules')">📜 จัดการกฎการ CF (Rules)</button>
+      <button class="tab-btn" onclick="switchTab('tab-history')">🏆 ประวัติการ CF สำเร็จ (Wins)</button>
+      <button class="tab-btn" onclick="switchTab('tab-settings')">⚙️ ตั้งค่าแพลตฟอร์ม & สปีด</button>
+    </nav>
+
+    <!-- TAB 1: Radar & Simulator -->
+    <div id="tab-radar" class="tab-content active">
+      <div class="chat-grid">
+        <!-- Simulator Box -->
+        <div class="card">
+          <div class="card-title">
+            <span>🧪 ทดสอบการจำลองข้อความแม่ค้า (Sniper Simulator)</span>
+            <span class="badge badge-matched">Test Flight</span>
+          </div>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom: 0.75rem;">
+            ลองวางข้อความที่แม่ค้ามักพิมพ์ลงในกลุ่ม เพื่อทดสอบว่าบอทจะจับคีย์เวิร์ด สกัดรหัส และสร้างข้อความ CF ถูกต้องหรือไม่
+          </p>
+          <div class="chat-window" id="simulator-window">
+            <div class="msg-bubble bot">
+              <div class="msg-meta">🎯 Sniper Testing Bot</div>
+              พิมพ์หรือวางข้อความโพสต์ขายของ เช่น: <br>
+              <code>"เปิดจอง Labubu V2 สีชมพู รหัส A05 ราคา 550 บาท ใครรับพิมพ์ CF รหัส ได้เลยค่ะ"</code>
+            </div>
+          </div>
+          <form class="chat-input-bar" onsubmit="testSniperMessage(event)">
+            <input type="text" id="sim-room" class="input-field" style="max-width: 140px;" placeholder="ชื่อกลุ่ม/OpenChat" value="OpenChat ปล่อยของ">
+            <input type="text" id="sim-text" class="input-field" placeholder="วางข้อความโพสต์ขายของที่นี่..." required>
+            <button type="submit" class="btn">ยิงทดสอบ CF</button>
+          </form>
+        </div>
+
+        <!-- Live Radar Activity Feed -->
+        <div class="card">
+          <div class="card-title">
+            <span>📡 เรดาร์ข้อความในกลุ่มสด (Live Room Radar)</span>
+            <button class="btn btn-secondary" style="padding:0.3rem 0.7rem; font-size:0.8rem;" onclick="loadRecentRadar()">รีเฟรช</button>
+          </div>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom: 0.75rem;">
+            มอนิเตอร์ข้อความที่ไหลเข้ามาจากกลุ่มไลน์, OpenChat และ LINE OA แบบเรียลไทม์
+          </p>
+          <div class="chat-window" id="radar-feed-window">
+            <!-- Radar feed will be populated by JS -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: Rules Manager -->
+    <div id="tab-rules" class="tab-content">
+      <div class="card">
+        <div class="card-title">
+          <span>📜 กฎการตรวจจับสินค้าและพิมพ์ CF อัตโนมัติ</span>
+          <button class="btn" onclick="toggleAddRuleModal()">+ สร้างกฎการ CF ใหม่</button>
+        </div>
+        <p style="font-size:0.85rem; color:var(--text-muted);">
+          เมื่อมีข้อความในกลุ่มที่มี <strong>Target Keywords</strong> ตรงตามที่ตั้งไว้ บอทจะสกัดรหัสสินค้าและพิมพ์ CF ส่งทันที
+        </p>
+
+        <!-- Add Rule Modal / Form -->
+        <div id="add-rule-form" style="display:none; margin: 1.5rem 0; padding: 1.25rem; background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: var(--radius-md);">
+          <h4 style="margin-bottom: 1rem; color: #f59e0b;">+ เพิ่มกฎการสไนเปอร์ CF</h4>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+              <label class="form-label">ชื่อกฎ (Rule Name)</label>
+              <input type="text" id="rule-name" class="input-field" placeholder="เช่น Labubu V2, เสื้อวินเทจ ไซส์ L">
+            </div>
+            <div class="form-group">
+              <label class="form-label">ห้อง/กลุ่มเป้าหมาย (ใส่ * เพื่อเฝ้าดูทุกกลุ่ม)</label>
+              <input type="text" id="rule-rooms" class="input-field" value="*" placeholder="เช่น OpenChat ของสะสม, กลุ่มโมเดล หรือ *">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">คำสำคัญที่ต้องมี (Target Keywords - คั่นด้วยจุลภาค)</label>
+            <input type="text" id="rule-keywords" class="input-field" placeholder="เช่น labubu, v2, ลาบูบู้, พร้อมส่ง, รหัส">
+          </div>
+          <div class="form-group">
+            <label class="form-label">คำต้องห้ามที่ไม่ให้ CF (Negative Keywords เช่น ขายแล้ว, จองแล้ว, หลุดจอง)</label>
+            <input type="text" id="rule-negative" class="input-field" placeholder="เช่น หมด, ปิด, ขายแล้ว, จองแล้ว">
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+              <label class="form-label">รูปแบบข้อความที่จะพิมพ์ CF (ใช้ {code} แทนรหัสสินค้า)</label>
+              <input type="text" id="rule-format" class="input-field" value="CF {code} พร้อมโอน" placeholder="เช่น CF {code} หรือ รับ 1">
+            </div>
+            <div class="form-group">
+              <label class="form-label">เพดานราคาสูงสุด (บาท - ใส่ 0 หากไม่จำกัด)</label>
+              <input type="number" id="rule-price" class="input-field" value="0" placeholder="เช่น 1500">
+            </div>
+            <div class="form-group">
+              <label class="form-label">หน่วงเวลาสุ่ม (Jitter Delay - มิลลิวินาที)</label>
+              <input type="number" id="rule-delay" class="input-field" value="200" placeholder="200">
+            </div>
+          </div>
+          <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+            <button class="btn" onclick="saveNewRule()">บันทึกกฎ</button>
+            <button class="btn btn-secondary" onclick="toggleAddRuleModal()">ยกเลิก</button>
+          </div>
+        </div>
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>สถานะ</th>
+                <th>ชื่อกฎ</th>
+                <th>กลุ่มเป้าหมาย</th>
+                <th>คำสำคัญ (Keywords)</th>
+                <th>ข้อความ CF ที่จะส่ง</th>
+                <th>เพดานราคา</th>
+                <th>ความเร็ว (Delay)</th>
+                <th>จัดการ</th>
+              </tr>
+            </thead>
+            <tbody id="rules-table-body">
+              <tr>
+                <td colspan="8" style="text-align:center; color:var(--text-muted);">กำลังโหลดกฎ...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: CF History / Wins -->
+    <div id="tab-history" class="tab-content">
+      <div class="card">
+        <div class="card-title">
+          <span>🏆 ประวัติรายการที่บอทพิมพ์ CF สำเร็จ (CF Sniper Wins)</span>
+          <button class="btn btn-secondary" onclick="loadCfHistory()">รีเฟรชประวัติ</button>
+        </div>
+        <p style="font-size:0.85rem; color:var(--text-muted);">
+          บันทึกเวลา กลุ่มที่สไนเปอร์สำเร็จ ข้อความที่แม่ค้าโพสต์ และข้อความ CF ที่บอทยิงออกไป
+        </p>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>เวลา</th>
+                <th>กลุ่ม/ห้อง</th>
+                <th>กฎที่ตรง</th>
+                <th>ข้อความของแม่ค้า</th>
+                <th>ข้อความ CF ที่บอทส่ง</th>
+                <th>ความเร็วที่ทำได้</th>
+                <th>สถานะ</th>
+              </tr>
+            </thead>
+            <tbody id="history-table-body">
+              <tr>
+                <td colspan="7" style="text-align:center; color:var(--text-muted);">กำลังโหลดประวัติ...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: Platform & Settings -->
+    <div id="tab-settings" class="tab-content">
+      <div class="card" style="max-width: 800px;">
+        <div class="card-title">
+          <span>⚙️ การตั้งค่าแพลตฟอร์ม & ความเร็วสไนเปอร์</span>
+        </div>
+        <form onsubmit="saveSniperSettings(event)">
+          <div class="form-group">
+            <label class="form-label">แพลตฟอร์มที่ใช้ยิง CF (Sniper Platform)</label>
+            <select id="cfg-platform" class="input-field" style="background:#131b2e;">
+              <option value="windows">LINE PC บน Windows (แนะนำ - เร็วที่สุดระดับมิลลิวินาที)</option>
+              <option value="android">Android / LDPlayer (รันในโปรแกรมจำลองเบื้องหลัง)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">โหมดป้องกันแบน (Anti-Bot Random Jitter)</label>
+            <select id="cfg-jitter" class="input-field" style="background:#131b2e;">
+              <option value="normal">ปานกลาง (หน่วง 200 - 400ms ดูเป็นธรรมชาติเสมือนคนพิมพ์ไว)</option>
+              <option value="fast">เร็วพิเศษ (หน่วง 100 - 200ms เน้นคิวแรก)</option>
+              <option value="instant">เร็วสูงสุด (0 - 50ms เสี้ยววินาที)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Secret Token สำหรับเชื่อมต่อ Bridge ภายนอก</label>
+            <input type="text" id="cfg-bridge-secret" class="input-field" value="secret-token-for-bridge">
+          </div>
+          <button type="submit" class="btn">บันทึกการตั้งค่า</button>
+        </form>
+      </div>
+    </div>
+
+  </main>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
