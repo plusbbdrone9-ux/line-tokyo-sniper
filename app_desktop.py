@@ -169,18 +169,13 @@ class LineSniperDesktopApp(ctk.CTk):
         )
         self.btn_help.pack(side="left", padx=4)
 
-        self.btn_refresh_windows = ctk.CTkButton(
-            ctrl_frame, text="🔄 ค้นหาห้องแชท", width=115, height=32,
-            fg_color="#374151", hover_color="#4b5563", font=ctk.CTkFont(size=12),
-            command=self.refresh_line_windows
+        self.badge_auto_room = ctk.CTkLabel(
+            ctrl_frame, text="⚡ ตรวจจับห้องแชทอัตโนมัติ 100%",
+            fg_color="#182234", text_color="#10b981",
+            font=ctk.CTkFont(size=12, weight="bold"), corner_radius=6, height=32, padx=12
         )
-        self.btn_refresh_windows.pack(side="left", padx=4)
+        self.badge_auto_room.pack(side="left", padx=4)
 
-        self.line_window_menu = ctk.CTkOptionMenu(
-            ctrl_frame, values=["(ค้นหาหน้าต่าง LINE PC...)"], width=180, height=32,
-            fg_color="#1f2937", button_color="#374151"
-        )
-        self.line_window_menu.pack(side="left", padx=4)
 
         # Master Toggle Button
         self.btn_master_toggle = ctk.CTkButton(
@@ -1045,40 +1040,24 @@ class LineSniperDesktopApp(ctk.CTk):
             print(f"Ingest server error: {e}")
 
     def refresh_line_windows(self):
-        """ค้นหาหน้าต่าง LINE PC ทั้งหมดบน Windows ด้วย ctypes และอัปเดตเมนู Dropdown"""
+        """ตรวจจับหน้าต่าง LINE PC อัตโนมัติในเบื้องหลังโดยไม่ต้องเลือกเอง"""
         windows = WindowsLineSniper.get_all_line_windows()
-
-        self.window_hwnd_map = {}
         if windows:
-            menu_values = []
-            for h, t in windows:
-                label = f"{t} (HWND:{h})"
-                menu_values.append(label)
-                self.window_hwnd_map[label] = h
-
-            self.line_window_menu.configure(values=menu_values, command=self.on_line_window_selected)
-            self.line_window_menu.set(menu_values[0])
             self.active_line_hwnd = windows[0][0]
             self.active_line_title = windows[0][1]
             if hasattr(self, "lbl_stream_target"):
-                self.lbl_stream_target.configure(text=f"🎯 กำลังดูดข้อความจาก: {windows[0][1]} (HWND:{windows[0][0]})")
-            self.lbl_status_msg.configure(text=f"✓ เชื่อมต่อหน้าต่าง LINE: {windows[0][1]} (HWND:{windows[0][0]})")
+                self.lbl_stream_target.configure(text=f"🎯 ตรวจพบห้องแชทอัตโนมัติ: {windows[0][1]}")
+            if hasattr(self, "lbl_status_msg"):
+                self.lbl_status_msg.configure(text=f"✓ เชื่อมต่อห้อง LINE อัตโนมัติ: {windows[0][1]}")
         else:
-            self.line_window_menu.configure(values=["(ไม่พบหน้าต่าง LINE PC)"])
-            self.line_window_menu.set("(ไม่พบหน้าต่าง LINE PC)")
             if hasattr(self, "lbl_stream_target"):
-                self.lbl_stream_target.configure(text="🎯 กำลังดูดข้อความจาก: (ไม่พบหน้าต่าง LINE PC)")
-            self.lbl_status_msg.configure(text="⚠ ไม่พบหน้าต่าง LINE PC (กรุณาเปิดแอป LINE ก่อน)")
+                self.lbl_stream_target.configure(text="🎯 โหมด: ตรวจจับอัตโนมัติทุกห้องตามกฎ")
+            if hasattr(self, "lbl_status_msg"):
+                self.lbl_status_msg.configure(text="🟢 สแตนด์บายพร้อมตรวจจับข้อความอัตโนมัติ")
 
     def on_line_window_selected(self, choice: str):
-        hwnd = self.window_hwnd_map.get(choice)
-        if hwnd:
-            self.active_line_hwnd = hwnd
-            title = choice.split(" (HWND:")[0]
-            self.active_line_title = title
-            if hasattr(self, "lbl_stream_target"):
-                self.lbl_stream_target.configure(text=f"🎯 กำลังดูดข้อความจาก: {title} (HWND:{hwnd})")
-            self.lbl_status_msg.configure(text=f"✓ เลือกห้องเป้าหมาย: {title} (HWND:{hwnd})")
+        pass
+
 
     def clear_console_log(self):
         self.radar_log_box.delete("1.0", "end")
