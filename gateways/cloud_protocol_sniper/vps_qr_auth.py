@@ -1,7 +1,7 @@
 """
-Official LINE E2EE Secondary QR Code Authentication for Tokyo VPS.
-Uses official DESKTOPWIN / CHROMEOS protocol handshake to generate
-authentic QR codes recognized by LINE mobile app without errors.
+Official LINE E2EE Modern QR Code Authentication for Tokyo VPS & Local PC.
+Uses modern LINE Desktop Protocol (Line/9.2.0.3400) to generate authentic
+QR codes recognized by LINE mobile app without error 403.
 """
 
 import sys
@@ -57,45 +57,78 @@ def save_token_to_env(token: str):
     print("   sudo systemctl start line-tokyo-sniper\n")
 
 
-def login_with_chrline():
+def login_modern_qr():
     try:
-        from CHRLINE import CHRLINE
+        import CHRLINE
     except ImportError:
         print("❌ ไม่พบโมดูล CHRLINE กรุณาติดตั้งด้วยคำสั่ง: pip install CHRLINE")
         return False
 
     print("========================================================================")
-    print("   📲 กำลังสร้าง QR Code ทางการของ LINE (รองรับสแกนผ่านมือถือ 100%) 📲")
+    print("   📲 ระบบสร้าง QR Code ทางการของ LINE (เวอร์ชันใหม่ Line/9.2.0) 📲")
     print("========================================================================")
-    print("ระบบกำลังเชื่อมต่อไปยังเซิร์ฟเวอร์ LINE โตเกียว เพื่อสร้างรหัสล็อกอิน...")
+    print("ระบบกำลังเชื่อมต่อไปยังเซิร์ฟเวอร์ LINE โตเกียว เพื่อสร้างรหัสล็อกอิน...\n")
 
     try:
-        # Try official device emulations (CHROMEOS and IOSIPAD bypass Cloud IP blocks)
-        cl = None
-        for dev in ["CHROMEOS", "IOSIPAD", "DESKTOPMAC", "DESKTOPWIN"]:
+        # Initialize with modern official desktop protocol
+        cl = CHRLINE.CHRLINE(device="DESKTOPWIN", version="9.2.0.3400", noLogin=True)
+        cl.USER_AGENT = "Line/9.2.0.3400"
+
+        # 1. Create Session & QR
+        session_resp = cl.createSession()
+        sqr = cl.checkAndGetValue(session_resp, 1, "val_1")
+        qr_resp = cl.createQrCode(sqr)
+        url = cl.checkAndGetValue(qr_resp, 1, "val_1")
+
+        secret, secretUrl = cl.createSqrSecret()
+        full_url = url + secretUrl
+
+        # 2. Print QR in terminal
+        print("🔗 ลิงก์ล็อกอินทางการ:")
+        print(f"   {full_url}\n")
+        print("สแกนภาพ QR Code ด้านล่างนี้ด้วยกล้องของแอป LINE ในมือถือ:")
+        cl.genQrcodeImageAndPrint(full_url)
+
+        print("\n⏳ [1/2] กำลังรอมือถือของคุณสแกน QR Code...")
+
+        # 3. Check QR Scanned
+        if cl.checkQrCodeVerified(sqr):
+            print("✅ [2/2] ตรวจพบการสแกนแล้ว! กำลังตรวจสอบรหัส PIN...")
             try:
-                print(f"กำลังสร้าง QR Code ผ่านโปรโตคอล {dev}...")
-                cl = CHRLINE(device=dev)
-                if cl:
-                    break
-            except Exception as de:
-                print(f"  ↳ รูปแบบ {dev} ไม่ผ่าน ({de}), กำลังสลับไปใช้รูปแบบถัดไป...")
+                cl.verifyCertificate(sqr, cl.getSqrCert())
+            except Exception:
+                pin = cl.createPinCode(sqr)
+                if isinstance(pin, dict):
+                    pin = cl.checkAndGetValue(pin, 1, "val_1")
+                print(f"\n👉👉👉 กรุณากดใส่รหัส PIN 4 หลักนี้ในมือถือของคุณ: 【 {pin} 】 👈👈👈\n")
+                cl.checkPinCodeVerified(sqr)
 
-        if not cl:
-            print("\n❌ ไม่สามารถสร้าง QR Code ผ่านทุกอุปกรณ์ได้")
-            return False
+            # 4. Exchange for AuthToken
+            login_resp = cl.qrCodeLoginV2(sqr, cl.APP_TYPE, cl.SYSTEM_NAME, True)
+            try:
+                cert = cl.checkAndGetValue(login_resp, 1)
+                cl.saveSqrCert(cert)
+            except Exception:
+                pass
 
-        token = getattr(cl, "authToken", None) or getattr(cl, "token", "")
+            tokenV3Info = cl.checkAndGetValue(login_resp, 3)
+            authToken = cl.checkAndGetValue(tokenV3Info, 1)
 
-        if token:
-            print(f"\n🎉 ล็อกอินสำเร็จเรียบร้อย! ได้รับ Auth Token ของคุณแล้ว!")
-            save_token_to_env(token)
-            return True
+            if authToken:
+                print(f"\n🎉 ล็อกอินสำเร็จเรียบร้อย! ได้รับ Auth Token ของคุณแล้ว!")
+                print(f"🔑 Auth Token: {authToken[:20]}...{authToken[-10:]}")
+                save_token_to_env(authToken)
+                return True
+            else:
+                print("❌ ไม่พบ authToken ในคำตอบจากเซิร์ฟเวอร์")
+                return False
+
     except Exception as e:
         print(f"\n❌ การล็อกอินไม่สำเร็จ: {e}")
-
+        import traceback
+        traceback.print_exc()
         return False
 
 
 if __name__ == "__main__":
-    login_with_chrline()
+    login_modern_qr()
