@@ -83,11 +83,70 @@ def login_modern_qr():
         secret, secretUrl = cl.createSqrSecret()
         full_url = url + secretUrl
 
-        # 2. Print QR in terminal
-        print("🔗 ลิงก์ล็อกอินทางการ:")
-        print(f"   {full_url}\n")
-        print("สแกนภาพ QR Code ด้านล่างนี้ด้วยกล้องของแอป LINE ในมือถือ:")
-        cl.genQrcodeImageAndPrint(full_url)
+        # 2. Serve clean high-res QR code on Web Browser (http://IP:8080/qr)
+        import qrcode
+        import io
+        import base64
+        from http.server import HTTPServer, BaseHTTPRequestHandler
+        import threading
+
+        qr = qrcode.QRCode(border=1)
+        qr.add_data(full_url)
+        img_buf = io.BytesIO()
+        img = qr.make_image(fill_color="black", back_color="white")
+        img.save(img_buf, format="PNG")
+        png_b64 = base64.b64encode(img_buf.getvalue()).decode("ascii")
+
+        html_page = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>LINE Tokyo VPS QR Login</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {{ background: #0b1120; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }}
+    .card {{ background: #1e293b; padding: 30px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 2px solid #06c755; text-align: center; max-width: 360px; }}
+    h2 {{ color: #06c755; margin: 0 0 10px 0; font-size: 22px; }}
+    p {{ color: #94a3b8; font-size: 14px; margin-bottom: 20px; }}
+    .qr-box {{ background: white; padding: 12px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }}
+    img {{ width: 260px; height: 260px; display: block; }}
+    .hint {{ margin-top: 18px; font-size: 13px; color: #38bdf8; }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>📲 สแกน QR Code เข้าสู่ระบบ</h2>
+    <p>เปิดแอป LINE ในมือถือ แล้วสแกนภาพด้านล่างนี้ได้เลยครับ</p>
+    <div class="qr-box">
+      <img src="data:image/png;base64,{png_b64}" alt="LINE QR Code">
+    </div>
+    <div class="hint">⚡ เมื่อสแกนแล้ว ให้ดูเลข PIN 4 หลักบนหน้าจอ Terminal</div>
+  </div>
+</body>
+</html>"""
+
+        class QRServer(BaseHTTPRequestHandler):
+            def log_message(self, format, *args):
+                pass
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(html_page.encode("utf-8"))
+
+        web_srv = HTTPServer(("0.0.0.0", 8080), QRServer)
+        t_web = threading.Thread(target=web_srv.serve_forever, daemon=True)
+        t_web.start()
+
+        print("========================================================================")
+        print("🌟 วิธีสแกนที่ง่ายที่สุด (เปิดบน Browser สแกนได้ทันทีใน 1 วินาที):")
+        print("👉 เปิดลิงก์นี้ในคอมหรือมือถือของคุณ: http://3.113.9.175:8080/qr")
+        print("========================================================================\n")
+        print("หรือถ้าต้องการสแกนบนหน้าจอดำ (แบบย่อขนาดพอดีจอ ไม่ล้น):")
+        try:
+            qr.print_ascii(invert=True)
+        except Exception:
+            pass
 
         print("\n⏳ [1/2] กำลังรอมือถือของคุณสแกน QR Code...")
 
