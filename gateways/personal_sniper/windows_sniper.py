@@ -25,6 +25,11 @@ user32.IsWindow.restype = wintypes.BOOL
 WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 
 class WindowsLineSniper:
+    _last_execution_time: float = 0.0
+    _last_sent_message: str = ""
+    _execution_lock: Optional[asyncio.Lock] = None
+    _min_cooldown_seconds: float = 4.0  # ป้องกันการยิงซ้ำอย่างเด็ดขาด ขั้นต่ำ 4 วินาที
+
     @classmethod
     def get_all_line_windows(cls) -> List[Tuple[int, str]]:
         """
@@ -115,86 +120,108 @@ class WindowsLineSniper:
         """
         start_time = time.time()
 
-        # 1. หาหน้าต่างเป้าหมาย
-        hwnd = target_hwnd
-        if not hwnd or not user32.IsWindow(hwnd):
-            hwnd = cls.find_chat_window(room_name)
+        # Strict Deduplication & Concurrency Lock
+        if cls._execution_lock is None:
+            cls._execution_lock = asyncio.Lock()
 
-        if not hwnd:
-            logger.error("No target LINE chat window found to send CF!")
-            return False
+        async with cls._execution_lock:
+            now = time.time()
+            if (now - cls._last_execution_time) < cls._min_cooldown_seconds:
+                logger.warning(
+                    f"⛔ [STRICT DEDUPLICATION] ปฏิเสธการยิงซ้ำ! เพิ่งยิงไปเมื่อ {now - cls._last_execution_time:.2f}s ก่อน (ขีดจำกัดขั้นต่ำ {cls._min_cooldown_seconds}s)"
+                )
+                return False
 
-        if delay_ms > 0:
-            await asyncio.sleep(delay_ms / 1000.0)
+            if cf_message and cf_message == cls._last_sent_message and (now - cls._last_execution_time) < 15.0:
+                logger.warning(
+                    f"⛔ [STRICT DEDUPLICATION] ปฏิเสธการยิงซ้ำ! ข้อความ '{cf_message}' ตรงกับข้อความล่าสุดที่เพิ่งส่งไป"
+                )
+                return False
 
-        try:
-            # 2. นำหน้าต่างแชทขึ้นมาด้านหน้า (Force Foreground Focus)
-            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
-            user32.BringWindowToTop(hwnd)
+            # บันทึกเวลาทันทีก่อนเริ่มยิง เพื่อป้องกัน Task อื่นที่รอคิว
+            cls._last_execution_time = now
+            cls._last_sent_message = cf_message
 
-            fore_hwnd = user32.GetForegroundWindow()
-            fore_thread = user32.GetWindowThreadProcessId(fore_hwnd, None)
-            cur_thread = kernel32.GetCurrentThreadId()
-            target_thread = user32.GetWindowThreadProcessId(hwnd, None)
+            # 1. หาหน้าต่างเป้าหมาย
+            hwnd = target_hwnd
+            if not hwnd or not user32.IsWindow(hwnd):
+                hwnd = cls.find_chat_window(room_name)
 
-            user32.AttachThreadInput(cur_thread, fore_thread, True)
-            user32.AttachThreadInput(cur_thread, target_thread, True)
-            user32.SetForegroundWindow(hwnd)
-            user32.SetFocus(hwnd)
-            user32.AttachThreadInput(cur_thread, target_thread, False)
-            user32.AttachThreadInput(cur_thread, fore_thread, False)
+            if not hwnd:
+                logger.error("No target LINE chat window found to send CF!")
+                return False
 
-            # 3. คำนวณพิกัดและคลิกที่ช่องพิมพ์ข้อความด้านล่าง (Click into 'Enter a message')
-            rect = wintypes.RECT()
-            user32.GetWindowRect(hwnd, ctypes.byref(rect))
-            w = rect.right - rect.left
-            click_x = rect.left + int(w * 0.35)
-            click_y = rect.bottom - 45  # ช่องพิมพ์ข้อความอยู่สูงจากขอบล่างประมาณ 40-50 px
+            if delay_ms > 0:
+                await asyncio.sleep(delay_ms / 1000.0)
 
-            user32.SetCursorPos(click_x, click_y)
-            user32.mouse_event(0x0002, 0, 0, 0, 0)
-            user32.mouse_event(0x0004, 0, 0, 0, 0)
+            try:
+                # 2. นำหน้าต่างแชทขึ้นมาด้านหน้า (Force Foreground Focus)
+                user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                user32.BringWindowToTop(hwnd)
 
-            # 4. วางข้อความภาษาไทยผ่าน Clipboard (Ctrl + V)
-            pyperclip.copy(cf_message)
+                fore_hwnd = user32.GetForegroundWindow()
+                fore_thread = user32.GetWindowThreadProcessId(fore_hwnd, None)
+                cur_thread = kernel32.GetCurrentThreadId()
+                target_thread = user32.GetWindowThreadProcessId(hwnd, None)
 
-            # VK_CONTROL = 0x11, 'V' = 0x56, VK_RETURN = 0x0D
-            user32.keybd_event(0x11, 0, 0, 0)
-            user32.keybd_event(0x56, 0, 0, 0)
-            user32.keybd_event(0x56, 0, 2, 0)
-            user32.keybd_event(0x11, 0, 2, 0)
+                user32.AttachThreadInput(cur_thread, fore_thread, True)
+                user32.AttachThreadInput(cur_thread, target_thread, True)
+                user32.SetForegroundWindow(hwnd)
+                user32.SetFocus(hwnd)
+                user32.AttachThreadInput(cur_thread, target_thread, False)
+                user32.AttachThreadInput(cur_thread, fore_thread, False)
 
-            # 5. กด Enter เพื่อส่งข้อความ
-            user32.keybd_event(0x0D, 0, 0, 0)
-            user32.keybd_event(0x0D, 0, 2, 0)
+                # 3. คำนวณพิกัดและคลิกที่ช่องพิมพ์ข้อความด้านล่าง (Click into 'Enter a message')
+                rect = wintypes.RECT()
+                user32.GetWindowRect(hwnd, ctypes.byref(rect))
+                w = rect.right - rect.left
+                click_x = rect.left + int(w * 0.35)
+                click_y = rect.bottom - 45  # ช่องพิมพ์ข้อความอยู่สูงจากขอบล่างประมาณ 40-50 px
 
-            duration_ms = round((time.time() - start_time) * 1000, 2)
-            logger.info(f"⚡ [SNIPER WIN] Sent '{cf_message}' to LINE window (HWND:{hwnd}) in {duration_ms}ms!")
+                user32.SetCursorPos(click_x, click_y)
+                user32.mouse_event(0x0002, 0, 0, 0, 0)
+                user32.mouse_event(0x0004, 0, 0, 0, 0)
 
-            # 6. บันทึกลงฐานข้อมูล
-            await log_cf_action(
-                rule_id=rule_id,
-                rule_name=rule_name,
-                room_name=room_name,
-                sender_name=sender_name,
-                original_message=original_message,
-                cf_text=cf_message,
-                status="SUCCESS",
-                execution_time_ms=duration_ms
-            )
-            return True
+                # 4. วางข้อความภาษาไทยผ่าน Clipboard (Ctrl + V)
+                pyperclip.copy(cf_message)
 
-        except Exception as e:
-            logger.error(f"Error executing sniper on Windows: {e}")
-            duration_ms = round((time.time() - start_time) * 1000, 2)
-            await log_cf_action(
-                rule_id=rule_id,
-                rule_name=rule_name,
-                room_name=room_name,
-                sender_name=sender_name,
-                original_message=original_message,
-                cf_text=cf_message,
-                status=f"FAILED: {e}",
-                execution_time_ms=duration_ms
-            )
-            return False
+                # VK_CONTROL = 0x11, 'V' = 0x56, VK_RETURN = 0x0D
+                user32.keybd_event(0x11, 0, 0, 0)
+                user32.keybd_event(0x56, 0, 0, 0)
+                user32.keybd_event(0x56, 0, 2, 0)
+                user32.keybd_event(0x11, 0, 2, 0)
+
+                # 5. กด Enter เพื่อส่งข้อความ
+                user32.keybd_event(0x0D, 0, 0, 0)
+                user32.keybd_event(0x0D, 0, 2, 0)
+
+                duration_ms = round((time.time() - start_time) * 1000, 2)
+                logger.info(f"⚡ [SNIPER WIN] Sent '{cf_message}' to LINE window (HWND:{hwnd}) in {duration_ms}ms!")
+
+                # 6. บันทึกลงฐานข้อมูล
+                await log_cf_action(
+                    rule_id=rule_id,
+                    rule_name=rule_name,
+                    room_name=room_name,
+                    sender_name=sender_name,
+                    original_message=original_message,
+                    cf_text=cf_message,
+                    status="SUCCESS",
+                    execution_time_ms=duration_ms
+                )
+                return True
+
+            except Exception as e:
+                logger.error(f"Error executing sniper on Windows: {e}")
+                duration_ms = round((time.time() - start_time) * 1000, 2)
+                await log_cf_action(
+                    rule_id=rule_id,
+                    rule_name=rule_name,
+                    room_name=room_name,
+                    sender_name=sender_name,
+                    original_message=original_message,
+                    cf_text=cf_message,
+                    status=f"FAILED: {e}",
+                    execution_time_ms=duration_ms
+                )
+                return False

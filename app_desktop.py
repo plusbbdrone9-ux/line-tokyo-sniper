@@ -41,6 +41,19 @@ class LineSniperDesktopApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
+        # 0. Single-Instance Mutex (ป้องกันเปิดโปรแกรมซ้อนกัน ซึ่งจะทำให้ยิง CF ซ้ำซ้อน 100%)
+        import ctypes
+        ERROR_ALREADY_EXISTS = 183
+        self._app_mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "LINE_SNIPER_DESKTOP_SINGLE_INSTANCE_MUTEX")
+        if ctypes.windll.kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
+            print("⚠ ตรวจพบโปรแกรมเปิดซ้อนกันอยู่แล้ว! กำลังปิดตัวเพื่อป้องกันการยิงซ้ำ")
+            messagebox.showwarning(
+                "แจ้งเตือน: ตรวจพบโปรแกรมเปิดอยู่แล้ว",
+                "มีโปรแกรม LINE Auto-CF Sniper กำลังทำงานอยู่แล้วในระบบ!\n\nระบบไม่อนุญาตให้เปิดซ้ำ เพื่อป้องกันการยิง CF ซ้ำซ้อนอย่างเด็ดขาด"
+            )
+            self.destroy()
+            sys.exit(0)
+
         self.title("LINE Auto-CF Sniper Bot (PC Desktop Edition)")
         self.geometry("1200x740")
         self.minsize(1050, 680)
@@ -59,6 +72,11 @@ class LineSniperDesktopApp(ctk.CTk):
         self.rules_cache: List[Dict[str, Any]] = []
         self.last_clipboard_text = ""
         self.last_sent_cf = ""
+
+        # Strict Anti-Duplicate Locks
+        self.last_global_snipe_time = 0.0
+        self.is_eval_active = False
+        self.is_executing_cf = False
 
         # Real-time Stream Ingestion Stats
         self.stats_ingested = 0
@@ -615,6 +633,10 @@ class LineSniperDesktopApp(ctk.CTk):
 
         now = time.time()
 
+        # 0. Global Anti-Duplicate Cooldown (ห้ามส่งซ้ำเด็ดขาด 4.0 วินาทีหลังการยิงใดๆ)
+        if (now - getattr(self, "last_global_snipe_time", 0.0)) < 4.0:
+            return
+
         # 1. ป้องกันยิงตัวเอง: ข้ามถ้าเป็นข้อความ CF ล่าสุดที่บอทเราเพิ่งส่งไป
         last_sent = getattr(self, "last_sent_cf", "").strip()
         if last_sent and (raw_text == last_sent or raw_text in last_sent or last_sent in raw_text):
@@ -643,10 +665,13 @@ class LineSniperDesktopApp(ctk.CTk):
             return
         recent_hashes[msg_hash] = now
 
-        # 4. In-Flight Execution Lock (ป้องกันจังหวะที่ข้อความเข้ามาซ้อนกันในระดับเสี้ยววินาที)
-        if getattr(self, "is_executing_cf", False):
+        # 4. Synchronous In-Flight Execution Lock (ป้องกันจังหวะที่ข้อความเข้ามาซ้อนกันในระดับเสี้ยววินาที)
+        if getattr(self, "is_eval_active", False) or getattr(self, "is_executing_cf", False):
             self._append_radar_log("   ↳ [ข้ามชั่วคราว]: มีคำสั่งยิง CF กำลังทำงานอยู่ (In-Flight Lock)")
             return
+
+        # ล็อคทันทีแบบ Synchronous ก่อน dispatch async task
+        self.is_eval_active = True
 
         self.stats_ingested += 1
         if hasattr(self, "lbl_metric_ingested"):
@@ -657,6 +682,10 @@ class LineSniperDesktopApp(ctk.CTk):
         room = getattr(self, "active_line_title", "LINE Group")
         async def _eval():
             try:
+                eval_now = time.time()
+                if (eval_now - getattr(self, "last_global_snipe_time", 0.0)) < 4.0:
+                    return
+
                 res = await CFRuleEngine.evaluate_message(room, "แม่ค้า", raw_text)
                 if res.get("should_cf"):
                     code = res.get("extracted_code", "")
@@ -667,14 +696,15 @@ class LineSniperDesktopApp(ctk.CTk):
                         self.recently_sniped_codes = {}
                         last_sniped = self.recently_sniped_codes
 
-                    # Cooldown 30 วินาที ต่อ (กฎ + รหัสสินค้า) ป้องกันการยิงซ้ำรอบเดิม
+                    # Cooldown 45 วินาที ต่อ (กฎ + รหัสสินค้า) ป้องกันการยิงซ้ำรอบเดิม
                     cooldown_key = f"{rule_id}_{code.strip().lower()}" if code else f"rule_{rule_id}"
                     last_time = last_sniped.get(cooldown_key, 0)
-                    if (eval_now - last_time) < 30.0:
-                        self._append_radar_log(f"   ↳ [ข้าม CF]: รหัส '{code}' ของกฎนี้เพิ่งส่งไปเมื่อ {int(eval_now - last_time)} วินาทีก่อน (ป้องกันยิงซ้ำ)")
+                    if (eval_now - last_time) < 45.0:
+                        self._append_radar_log(f"   ↳ [ข้าม CF]: รหัส '{code}' ของกฎนี้เพิ่งส่งไปเมื่อ {int(eval_now - last_time)} วินาทีก่อน (ป้องกันยิงซ้ำ 100%)")
                         return
 
-                    # ล็อค In-Flight และบันทึก Cooldown
+                    # ล็อค Global Cooldown และ In-Flight ทันที
+                    self.last_global_snipe_time = eval_now
                     self.is_executing_cf = True
                     last_sniped[cooldown_key] = eval_now
 
@@ -684,6 +714,7 @@ class LineSniperDesktopApp(ctk.CTk):
 
                     cf_msg = res["cf_message"]
                     self.last_sent_cf = cf_msg
+                    self.last_clipboard_text = cf_msg
                     hwnd = getattr(self, "active_line_hwnd", None)
                     delay = getattr(self, "custom_jitter_delay", 0)
                     self._append_radar_log(f"🎯 [{source}] ตรงเงื่อนไขกฎ '{res.get('rule_name')}': รหัส '{code}' -> กำลังยิง CF ทันที!")
@@ -720,10 +751,12 @@ class LineSniperDesktopApp(ctk.CTk):
                 else:
                     self._append_radar_log(f"   ↳ [ไม่ยิง CF]: {res.get('reason')}")
             except Exception as e:
-                self.is_executing_cf = False
                 import traceback
                 print(f"Error in _eval: {e}\n{traceback.format_exc()}")
                 self._append_radar_log(f"❌ [ERROR] เกิดข้อผิดพลาดในการประเมิน: {e}")
+            finally:
+                self.is_eval_active = False
+                self.is_executing_cf = False
 
         self.run_async(_eval())
 
@@ -917,17 +950,14 @@ class LineSniperDesktopApp(ctk.CTk):
 
                 last_scanned_text = combined_text
 
-                # 1) ตรวจสอบและดักจับข้อความรายบรรทัด
-                for line in detected_lines:
-                    if len(line) >= 2 and line not in seen_texts:
-                        seen_texts.add(line)
-                        if not line.startswith("CF ") and line != getattr(self, "last_sent_cf", ""):
-                            self.after(0, lambda t=line: self._trigger_snipe_with_text(t, source="LIVE RADAR"))
-
-                # 2) ตรวจสอบข้อความรวมทั้งกล่องแชทล่าสุด (รวมชื่อสินค้า รหัส และราคาครบถ้วน)
-                if combined_text not in seen_texts and not combined_text.startswith("CF "):
-                    seen_texts.add(combined_text)
-                    self.after(0, lambda t=combined_text: self._trigger_snipe_with_text(t, source="LIVE RADAR"))
+                # ตรวจสอบและเลือกข้อความที่ดีที่สุด 1 รายการเท่านั้น (ป้องกันการยิงซ้ำซ้อนเด็ดขาด 100%)
+                text_to_eval = combined_text if len(detected_lines) > 1 else detected_lines[0]
+                if text_to_eval and text_to_eval not in seen_texts:
+                    seen_texts.add(text_to_eval)
+                    for l in detected_lines:
+                        seen_texts.add(l)
+                    if not text_to_eval.startswith("CF ") and text_to_eval != getattr(self, "last_sent_cf", ""):
+                        self.after(0, lambda t=text_to_eval: self._trigger_snipe_with_text(t, source="LIVE RADAR"))
 
             except Exception as e:
                 time.sleep(1.0)
