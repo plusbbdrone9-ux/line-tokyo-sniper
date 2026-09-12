@@ -41,19 +41,6 @@ class LineSniperDesktopApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        # 0. Single-Instance Mutex (ป้องกันเปิดโปรแกรมซ้อนกัน ซึ่งจะทำให้ยิง CF ซ้ำซ้อน 100%)
-        import ctypes
-        ERROR_ALREADY_EXISTS = 183
-        self._app_mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "LINE_SNIPER_DESKTOP_SINGLE_INSTANCE_MUTEX")
-        if ctypes.windll.kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
-            print("⚠ ตรวจพบโปรแกรมเปิดซ้อนกันอยู่แล้ว! กำลังปิดตัวเพื่อป้องกันการยิงซ้ำ")
-            messagebox.showwarning(
-                "แจ้งเตือน: ตรวจพบโปรแกรมเปิดอยู่แล้ว",
-                "มีโปรแกรม LINE Auto-CF Sniper กำลังทำงานอยู่แล้วในระบบ!\n\nระบบไม่อนุญาตให้เปิดซ้ำ เพื่อป้องกันการยิง CF ซ้ำซ้อนอย่างเด็ดขาด"
-            )
-            self.destroy()
-            sys.exit(0)
-
         self.title("LINE Auto-CF Sniper Bot (PC Desktop Edition)")
         self.geometry("1200x740")
         self.minsize(1050, 680)
