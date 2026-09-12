@@ -70,11 +70,21 @@ def login_with_chrline():
     print("ระบบกำลังเชื่อมต่อไปยังเซิร์ฟเวอร์ LINE โตเกียว เพื่อสร้างรหัสล็อกอิน...")
 
     try:
-        # Initialize official Desktop client emulation
-        try:
-            cl = CHRLINE(device="DESKTOPWIN")
-        except Exception:
-            cl = CHRLINE()
+        # Try official device emulations (CHROMEOS and IOSIPAD bypass Cloud IP blocks)
+        cl = None
+        for dev in ["CHROMEOS", "IOSIPAD", "DESKTOPMAC", "DESKTOPWIN"]:
+            try:
+                print(f"กำลังสร้าง QR Code ผ่านโปรโตคอล {dev}...")
+                cl = CHRLINE(device=dev)
+                if cl:
+                    break
+            except Exception as de:
+                print(f"  ↳ รูปแบบ {dev} ไม่ผ่าน ({de}), กำลังสลับไปใช้รูปแบบถัดไป...")
+
+        if not cl:
+            print("\n❌ ไม่สามารถสร้าง QR Code ผ่านทุกอุปกรณ์ได้")
+            return False
+
         token = getattr(cl, "authToken", None) or getattr(cl, "token", "")
 
         if token:
@@ -83,6 +93,7 @@ def login_with_chrline():
             return True
     except Exception as e:
         print(f"\n❌ การล็อกอินไม่สำเร็จ: {e}")
+
         return False
 
 
