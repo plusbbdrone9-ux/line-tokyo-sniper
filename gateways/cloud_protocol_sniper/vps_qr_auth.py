@@ -71,8 +71,12 @@ def login_with_chrline():
 
     try:
         # Initialize official Desktop client emulation
-        cl = CHRLINE(device="DESKTOPWIN", use_e2ee=True)
-        token = cl.authToken
+        try:
+            cl = CHRLINE(device="DESKTOPWIN")
+        except Exception:
+            cl = CHRLINE()
+        token = getattr(cl, "authToken", None) or getattr(cl, "token", "")
+
         if token:
             print(f"\n🎉 ล็อกอินสำเร็จเรียบร้อย! ได้รับ Auth Token ของคุณแล้ว!")
             save_token_to_env(token)
